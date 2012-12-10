@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-	<classpathentry excluding="main/java/|test/java/" kind="src" path="src"/>
 	<classpathentry kind="src" path="src/main/java"/>
 	<classpathentry kind="src" path="src/test/java"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
-	<classpathentry kind="lib" path="lib/org.snu.ids.ha.jar" sourcepath="/home/deicide/Downloads/kkma-src/src"/>
+	<classpathentry kind="lib" path="lib/org.snu.ids.ha.jar" sourcepath="/home/amitabul/workspace/ids-ha/src"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

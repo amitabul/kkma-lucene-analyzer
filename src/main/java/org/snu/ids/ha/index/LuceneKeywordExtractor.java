@@ -1,7 +1,6 @@
 package org.snu.ids.ha.index;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -9,9 +8,6 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 
 import org.snu.ids.ha.constants.POSTag;
-import org.snu.ids.ha.index.Keyword;
-import org.snu.ids.ha.index.KeywordExtractor;
-import org.snu.ids.ha.index.KeywordList;
 import org.snu.ids.ha.ma.CharSetType;
 import org.snu.ids.ha.ma.MCandidate;
 import org.snu.ids.ha.ma.MExpression;
@@ -19,6 +15,7 @@ import org.snu.ids.ha.ma.Morpheme;
 import org.tartarus.snowball.EnglishStemmer;
 
 public class LuceneKeywordExtractor extends KeywordExtractor {
+  
   /**
    * extract index word from the given string
    * 
@@ -26,20 +23,19 @@ public class LuceneKeywordExtractor extends KeywordExtractor {
    * @author amitabul <mousegood@gmail.com>
    * @return the keyword list
    */
-  
-  
   public SortedSet<TokenInfo> extractTokens(String string, boolean onlyNoun) {
     SortedSet<TokenInfo> tokenInfos = new TreeSet<TokenInfo>();
 
     List<Keyword> keywords = new ArrayList<Keyword>();
     try {
       List<MExpression> meList = leaveJustBest(postProcess(analyze(string)));
-
+      System.out.println("meList ->\n" + meList);
       List<Morpheme> mpList = generateMpList(meList);
 
       // 복합 UOM 생성. 원형태소는 삭제하고 복합 UOM를 새로 생성하여 삽입.
       findUomAndRegenerateMpList(mpList);
       
+      System.out.println(mpList);
       // 키워드 추출(mpList -> Keyword)
       keywords.addAll(extractKeywords(onlyNoun, mpList));
 
@@ -47,13 +43,13 @@ public class LuceneKeywordExtractor extends KeywordExtractor {
       keywords.addAll(extractComposedNoun(mpList));
       
       // TODO 어절을 만들어 keywords 에 넣는다.
-      keywords.addAll(generateEojeol(mpList));
+      //keywords.addAll(generateEojeol(mpList));
 
+      // XP(접두사), XS(접미사), VX(보조용언)
       removeMorepheme(keywords, POSTag.XP | POSTag.XS | POSTag.VX);
       removeStopword(keywords);
       
-
-        // 복합명사는 분해하여 keyword 등록.
+      // 복합명사는 분해하여 keyword 등록.
       keywords.addAll(decompose(keywords));
 
       // index순서대로 정렬한다.
@@ -70,30 +66,28 @@ public class LuceneKeywordExtractor extends KeywordExtractor {
       for (Keyword k: keywords) {
         Offsets offsets =
             new Offsets(k.getIndex(), k.getIndex() + k.getString().length());
-        // 원어절 삽입
-        if (k.getVocTag().compareTo("Origin") == 0) {
-          tokenInfos.add(new TokenInfo(
-              k.getString(), 0, offsets));
-        } else {
-          tokenInfos.add(new TokenInfo(
-              k.getString(), (k.isComposed() ? 0 : 1), offsets));
+        tokenInfos.add(new TokenInfo(
+            k.getString(), (k.isComposed() ? 0 : 1), offsets));
+      }
+      
+      // 어절 추가
+      for (MExpression mexp: meList) {
+        String eojeol = mexp.getExp();
+        Morpheme firstMorpheme = mexp.get(0).get(0);
+        System.out.println("eojeol->\n" + eojeol);
+        if (!firstMorpheme.isTagOf(POSTag.S)) {
+          int startOffset = firstMorpheme.getIndex();
+          Offsets offsets =
+              new Offsets(startOffset, startOffset + eojeol.length());
+          if (firstMorpheme.isTagOf(POSTag.V)) { 
+            tokenInfos.add(new TokenInfo(eojeol, 1, offsets));
+          } else {
+            tokenInfos.add(new TokenInfo(eojeol, 0, offsets));
+          }
+          
         }
       }
       
-//      // 어절 추가
-//      for (MExpression mexp: meList) {
-//        String eojeol = mexp.getExp();
-//        Morpheme firstMorpheme = mexp.get(0).get(0);
-//        int startOffset = firstMorpheme.getIndex();
-//        Offsets offsets =
-//            new Offsets(startOffset, startOffset + eojeol.length());
-//        if (firstMorpheme.isTagOf(POSTag.N)) { 
-//          tokenInfos.add(new TokenInfo(eojeol, 0, offsets));
-//        } else {
-//          tokenInfos.add(new TokenInfo(eojeol, 1, offsets));
-//        }
-//      }
-//      
     
     } catch (Exception e) {
       System.err.println(string);
@@ -101,6 +95,28 @@ public class LuceneKeywordExtractor extends KeywordExtractor {
     }
     
     return tokenInfos;
+  }
+  
+  @Override
+  public List<MExpression> leaveJustBest(List<MExpression> meList) 
+      throws Exception {
+    
+    final int overAnalysisPreventionLimitLength = 2;
+    
+    for (MExpression me: meList) {
+      if (me.getExp().length() == overAnalysisPreventionLimitLength) {
+        MCandidate mc = me.get(me.size()-1);
+        Morpheme morpheme = mc.get(0);
+        if (morpheme.isTag(POSTag.UN)) {
+          me.clear();
+          me.add(mc);
+        }
+      }
+    }
+    
+    super.leaveJustBest(meList);
+    
+    return meList;
   }
 
   private List<Keyword> generateEojeol(List<Morpheme> mpList) {
@@ -317,7 +333,8 @@ public class LuceneKeywordExtractor extends KeywordExtractor {
       mp.setString(mp.getString().toLowerCase());
 
       // stemming 및 키워드 추출
-      if ((!onlyNoun || mp.isTagOf(POSTag.N)) && !JunkWordDic.contains(mp.getString())) {
+      if ((mp.isTagOf(POSTag.N) || mp.isTagOf(POSTag.O) || mp.isTagOf(POSTag.UN)) 
+          && !JunkWordDic.contains(mp.getString())) {
 
         // do stemming english word
         if (mp.isTagOf(POSTag.UN) && (mp.getCharSet() == CharSetType.ENGLISH)) {
